@@ -1,0 +1,420 @@
+blueprint:
+  name: Air Freshener Heater Schedule (Air Wick-style)
+  description: >
+    Designed for **wick / heater-style** air fresheners (Air Wick, Glade
+    PlugIns, Febreze warmers…) that need **sustained power** to warm
+    the wick and evaporate the oil. Unlike spray dispensers, these cannot
+    emit scent from a short pulse — they need continuous ON windows.
+
+
+    ### How it models the day
+
+    ```
+    |--- QUIET (off) ---|--- ACTIVE window ---|--- QUIET (off) ---|
+                        |
+                        ├─ prime_times: short forced ON boosts
+                        │
+                        ├─ BATHROOM preset: continuous ON
+                        │
+                        └─ AREA presets: on_minutes / off_minutes waves
+    ```
+
+
+    ### Room-type presets (wick-optimized)
+
+    | Room type     | Pattern                        | Notes                              |
+    |---------------|--------------------------------|-----------------------------------|
+    | BATHROOM      | Continuous ON during window    | Priority comfort                   |
+    | BEDROOM       | 30 min ON / 90 min OFF waves   | Subtle, anti-overwhelm             |
+    | LIVING_ROOM   | 60 min ON / 30 min OFF waves   | Daytime ambient                    |
+    | TV_ROOM       | 60 min ON / 30 min OFF waves   | Same as LIVING_ROOM                |
+    | DINING_ROOM   | 45 min ON / 45 min OFF waves   | Meal-time coverage                 |
+    | KITCHEN       | 45 min ON / 15 min OFF waves   | Helps mask cooking odors           |
+    | LARGE_ROOM    | 90 min ON / 15 min OFF waves   | Bigger space needs more saturation |
+    | ENTRYWAY      | 30 min ON / 60 min OFF waves   | First impression                   |
+    | CUSTOM        | user-defined                   | Use `wave_on_minutes` / `wave_off_minutes` |
+
+
+    ### Features
+
+    - **Active window** — device is only considered on duty between
+      `active_window_start` and `active_window_end`. Outside, always OFF.
+
+    - **Prime/boost times** — optional list of times (e.g. 07:00, 20:00)
+      that force ON for the next `prime_duration_minutes`, overriding
+      whatever wave phase. Great for warming up before peak use.
+
+    - **Waves for non-bathroom rooms** — repeating `wave_on_minutes`
+      ON / `wave_off_minutes` OFF cycle anchored to the window start.
+      Calculated live so the automation is idempotent (HA restart-safe).
+
+    - **Continuous bathrooms** — stay ON throughout the window.
+
+    - **Optional motion-gating** — for non-bathroom rooms, additionally
+      require that motion was detected in the last `motion_recent_minutes`
+      to avoid wasting scent in empty rooms.
+
+    - **Optional humidity skip** — pauses for bathrooms if humidity rises
+      above a threshold (shower steam). Keeps the plug off so it doesn't
+      cook while humid.
+
+    - **Enforcement check** — every `check_interval_minutes` (default 5)
+      recalculates expected state and corrects the switch.
+
+    - **Fail-safe** — on HA start the automation immediately evaluates and
+      sets the correct state.
+
+
+    **Version:** 1.0.0
+    **Author:** abasgeor
+    **License:** MIT
+
+  domain: automation
+  source_url: https://github.com/abasgeor/ha-blueprints/blob/main/blueprints/automation/abasgeor/air_freshener_heater_schedule.yaml
+
+  input:
+    # ── SECTION 1: DEVICE ────────────────────────────────────────────
+    device_section:
+      name: Device
+      icon: mdi:air-filter
+      collapsed: false
+      input:
+        freshener_switch:
+          name: Heater switch / smart plug
+          description: >
+            The switch or light entity that powers the Air Wick / Glade /
+            Febreze warmer.
+          selector:
+            entity:
+              filter:
+                - domain:
+                    - switch
+                    - light
+                    - input_boolean
+
+    # ── SECTION 2: ROOM PRESET ───────────────────────────────────────
+    preset_section:
+      name: Room type
+      icon: mdi:home-variant
+      collapsed: false
+      input:
+        room_type:
+          name: Room type preset
+          description: >
+            Sets default wave lengths (or continuous for bathrooms).
+            Override below with CUSTOM + wave_on/off fields.
+          default: LIVING_ROOM
+          selector:
+            select:
+              options:
+                - label: "Bathroom (continuous during window)"
+                  value: BATHROOM
+                - label: "Bedroom (30 on / 90 off)"
+                  value: BEDROOM
+                - label: "Living room (60 on / 30 off)"
+                  value: LIVING_ROOM
+                - label: "TV room (60 on / 30 off)"
+                  value: TV_ROOM
+                - label: "Dining room (45 on / 45 off)"
+                  value: DINING_ROOM
+                - label: "Kitchen (45 on / 15 off)"
+                  value: KITCHEN
+                - label: "Large / open room (90 on / 15 off)"
+                  value: LARGE_ROOM
+                - label: "Entryway (30 on / 60 off)"
+                  value: ENTRYWAY
+                - label: "Custom (use fields below)"
+                  value: CUSTOM
+
+    # ── SECTION 3: WINDOW ────────────────────────────────────────────
+    window_section:
+      name: Active window
+      icon: mdi:clock-outline
+      collapsed: false
+      input:
+        active_window_start:
+          name: Window start
+          default: "07:00:00"
+          selector:
+            time:
+        active_window_end:
+          name: Window end
+          default: "22:00:00"
+          selector:
+            time:
+
+    # ── SECTION 4: WAVE OVERRIDES ────────────────────────────────────
+    override_section:
+      name: Wave overrides (optional)
+      icon: mdi:tune
+      collapsed: true
+      input:
+        wave_on_minutes:
+          name: Custom wave ON minutes
+          description: >
+            Leave at 0 to use the room preset. Only used for non-bathroom rooms.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 240
+              unit_of_measurement: min
+              mode: box
+        wave_off_minutes:
+          name: Custom wave OFF minutes
+          description: >
+            Leave at 0 to use the room preset. Only used for non-bathroom rooms.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 240
+              unit_of_measurement: min
+              mode: box
+
+    # ── SECTION 5: PRIME / BOOST ─────────────────────────────────────
+    prime_section:
+      name: Prime / boost
+      icon: mdi:lightning-bolt
+      collapsed: true
+      input:
+        prime_enabled:
+          name: Enable prime / boost times
+          description: >
+            If ON, forces device ON at each time in the list below for
+            `prime_duration_minutes`. Good for warming up before peak use
+            (breakfast, dinner, sleep).
+          default: false
+          selector:
+            boolean:
+        prime_times:
+          name: Prime / boost times
+          description: >
+            Times of day to force ON (comma-separated HH:MM). Example:
+            `07:00, 20:00`.
+          default: "07:00, 20:00"
+          selector:
+            text:
+        prime_duration_minutes:
+          name: Prime duration (minutes)
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 120
+              unit_of_measurement: min
+              mode: slider
+              step: 5
+
+    # ── SECTION 6: MOTION GATING (OPTIONAL) ──────────────────────────
+    motion_section:
+      name: Motion gating (optional, non-bathroom)
+      icon: mdi:motion-sensor
+      collapsed: true
+      input:
+        motion_sensor:
+          name: Motion / occupancy sensor
+          description: >
+            Optional. For non-bathroom rooms, the device is only allowed
+            ON during waves if motion was detected in the last
+            `motion_recent_minutes` (saves scent when room is empty).
+            Not used for BATHROOM preset.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: binary_sensor
+        motion_recent_minutes:
+          name: Motion recency window
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 240
+              unit_of_measurement: min
+
+    # ── SECTION 7: HUMIDITY SKIP (OPTIONAL) ──────────────────────────
+    humidity_section:
+      name: Humidity skip (optional, bathrooms)
+      icon: mdi:water-percent
+      collapsed: true
+      input:
+        humidity_sensor:
+          name: Humidity sensor
+          description: >
+            Optional. For BATHROOM preset, pauses the heater if humidity
+            goes above threshold (shower steam) to avoid overheating the
+            plug and wasting oil.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+                  device_class: humidity
+        humidity_skip_above:
+          name: Skip if humidity above (%)
+          default: 75
+          selector:
+            number:
+              min: 40
+              max: 100
+              unit_of_measurement: "%"
+              mode: slider
+
+    # ── SECTION 8: ENFORCEMENT ───────────────────────────────────────
+    enforcement_section:
+      name: Enforcement
+      icon: mdi:shield-check
+      collapsed: true
+      input:
+        check_interval_minutes:
+          name: Enforcement check interval
+          description: >
+            How often to recompute expected state and correct the switch.
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 30
+              unit_of_measurement: min
+
+mode: single
+max_exceeded: silent
+
+variables:
+  room_type_var: !input room_type
+  active_window_start_var: !input active_window_start
+  active_window_end_var: !input active_window_end
+  wave_on_var: !input wave_on_minutes
+  wave_off_var: !input wave_off_minutes
+  prime_enabled_var: !input prime_enabled
+  prime_times_var: !input prime_times
+  prime_duration_var: !input prime_duration_minutes
+  motion_sensor_var: !input motion_sensor
+  motion_recent_var: !input motion_recent_minutes
+  humidity_sensor_var: !input humidity_sensor
+  humidity_skip_above_var: !input humidity_skip_above
+  freshener_switch_var: !input freshener_switch
+  check_interval_var: !input check_interval_minutes
+  preset_on: >-
+    {% set t = {
+      'BATHROOM': 0,
+      'BEDROOM': 30,
+      'LIVING_ROOM': 60,
+      'TV_ROOM': 60,
+      'DINING_ROOM': 45,
+      'KITCHEN': 45,
+      'LARGE_ROOM': 90,
+      'ENTRYWAY': 30,
+      'CUSTOM': 30
+    } %}
+    {{ t.get(room_type_var, 30) }}
+  preset_off: >-
+    {% set t = {
+      'BATHROOM': 0,
+      'BEDROOM': 90,
+      'LIVING_ROOM': 30,
+      'TV_ROOM': 30,
+      'DINING_ROOM': 45,
+      'KITCHEN': 15,
+      'LARGE_ROOM': 15,
+      'ENTRYWAY': 60,
+      'CUSTOM': 30
+    } %}
+    {{ t.get(room_type_var, 30) }}
+  effective_on_min: >-
+    {{ wave_on_var if wave_on_var > 0 else preset_on | int }}
+  effective_off_min: >-
+    {{ wave_off_var if wave_off_var > 0 else preset_off | int }}
+  is_bathroom: "{{ room_type_var == 'BATHROOM' }}"
+  has_motion: "{{ motion_sensor_var not in [none, '', {}] }}"
+  has_humidity: "{{ humidity_sensor_var not in [none, '', {}] }}"
+
+trigger:
+  - platform: time_pattern
+    minutes: /1
+    id: enforce_tick
+  - platform: homeassistant
+    event: start
+    id: ha_start
+  - platform: state
+    entity_id: !input freshener_switch
+    id: user_changed
+
+action:
+  - variables:
+      now_mins: "{{ now().hour * 60 + now().minute }}"
+      ws_mins: "{{ active_window_start_var[0:2]|int * 60 + active_window_start_var[3:5]|int }}"
+      we_mins: "{{ active_window_end_var[0:2]|int * 60 + active_window_end_var[3:5]|int }}"
+      in_window: >-
+        {% if ws_mins < we_mins %}
+          {{ ws_mins <= now_mins < we_mins }}
+        {% else %}
+          {{ now_mins >= ws_mins or now_mins < we_mins }}
+        {% endif %}
+      minutes_into_window: >-
+        {% if ws_mins < we_mins %}
+          {{ now_mins - ws_mins if now_mins >= ws_mins else 0 }}
+        {% else %}
+          {{ (now_mins + 1440 - ws_mins) % 1440 }}
+        {% endif %}
+      # Prime window check
+      in_prime: >-
+        {% if not prime_enabled_var %}false
+        {% else %}
+          {% set times = prime_times_var.split(',') %}
+          {% set ns = namespace(hit=false) %}
+          {% for t in times %}
+            {% set tt = t.strip() %}
+            {% set ph = tt[0:2]|int %}
+            {% set pm = tt[3:5]|int %}
+            {% set start = ph*60+pm %}
+            {% set end = start + prime_duration_var %}
+            {% if start <= now_mins < end %}{% set ns.hit = true %}{% endif %}
+          {% endfor %}
+          {{ ns.hit }}
+        {% endif %}
+      # Wave calculation
+      cycle_total: "{{ effective_on_min|int + effective_off_min|int }}"
+      position_in_cycle: >-
+        {% if cycle_total|int == 0 %}0
+        {% else %}{{ minutes_into_window|int % cycle_total|int }}{% endif %}
+      in_wave_on: "{{ position_in_cycle|int < effective_on_min|int }}"
+      # Motion gate
+      motion_ok: >-
+        {% if is_bathroom or not has_motion %}true
+        {% else %}
+          {% set ls = states[motion_sensor_var].last_changed if states[motion_sensor_var] else now() %}
+          {% set ago = (as_timestamp(now()) - as_timestamp(ls)) / 60 %}
+          {{ ago < motion_recent_var|int or states(motion_sensor_var) == 'on' }}
+        {% endif %}
+      # Humidity block
+      humidity_block: >-
+        {% if is_bathroom and has_humidity %}
+          {{ (states(humidity_sensor_var) | float(default=0)) >= humidity_skip_above_var }}
+        {% else %}false{% endif %}
+      # Desired state
+      want_on: >-
+        {% if not in_window|bool %}false
+        {% elif humidity_block|bool %}false
+        {% elif in_prime|bool %}true
+        {% elif is_bathroom %}true
+        {% else %}
+          {{ in_wave_on|bool and motion_ok|bool }}
+        {% endif %}
+      current_state: "{{ states(freshener_switch_var) }}"
+      current_on: "{{ current_state == 'on' }}"
+
+  - choose:
+      - conditions:
+          - "{{ want_on|bool and not current_on|bool }}"
+        sequence:
+          - service: homeassistant.turn_on
+            target:
+              entity_id: "{{ freshener_switch_var }}"
+      - conditions:
+          - "{{ not want_on|bool and current_on|bool }}"
+        sequence:
+          - service: homeassistant.turn_off
+            target:
+              entity_id: "{{ freshener_switch_var }}"
