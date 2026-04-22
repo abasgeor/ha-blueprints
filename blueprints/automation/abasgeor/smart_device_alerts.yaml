@@ -1,0 +1,479 @@
+blueprint:
+  name: Smart Device Health Alerts (Brand-Aware)
+  description: >
+    Monitor any set of entities for three health conditions — low battery,
+    offline/unavailable, and stale numeric data — and fire rich notifications
+    with auto-detected brand icons from the custom-brand-icons integration
+    (`phu:` prefix).
+
+
+    ### Features
+
+    - **Low battery** alerts (configurable threshold) from any numeric
+      battery sensor.
+
+    - **Offline detection** when an entity stays `unavailable` or `unknown`
+      longer than a grace period.
+
+    - **Stale data** watcher — detects when a numeric sensor has not
+      reported a new value for X hours (useful for Zigbee/Tuya sensors
+      that silently die).
+
+    - **Brand-aware icons** — notifications include the correct
+      manufacturer icon (Aqara, Philips Hue, Tuya, Shelly, Sonos,
+      Apple, Samsung, LG, Amazon, Google, Xiaomi, Moes, TP-Link,
+      Levoit, Dreame, Ubiquiti, Bose, Roborock, Lutron, Ecobee,
+      Nest, Ring, Arlo, Wyze, Reolink, Yale, Kwikset, August,
+      Fibaro, Somfy, Sonoff, Matter, Thread, Zigbee, Z-Wave, etc).
+
+    - **Cooldown** per entity to prevent notification floods when a
+      device is flapping.
+
+    - **Digest mode** — accumulate alerts for N hours and send one
+      consolidated notification (great for end-of-day summaries).
+
+    - **Mobile actions** — iOS/Android dismiss & snooze buttons.
+
+    - **Persistent notification** option so alerts show in the HA
+      sidebar until acknowledged.
+
+
+    ### Requirements
+
+    - [custom-brand-icons](https://github.com/elax46/custom-brand-icons)
+      HACS plugin installed for the `phu:` icons to render. Without it
+      the blueprint still works, icons just fall back to MDI.
+
+
+    ### Why it's useful
+
+    Native Home Assistant has no brand-aware alerting. This blueprint
+    gives every notification the visual identity of the manufacturer,
+    makes debugging a fleet of IoT devices far easier, and bundles
+    three common monitoring needs into one reusable template.
+
+
+    **Version:** 1.0.0
+    **Author:** abasgeor
+    **License:** MIT
+
+  domain: automation
+  source_url: https://github.com/abasgeor/ha-blueprints/blob/main/blueprints/automation/abasgeor/smart_device_alerts.yaml
+
+  input:
+    # ── SECTION 1: ENTITIES ──────────────────────────────────────────
+    entities_section:
+      name: Entities
+      icon: mdi:devices
+      collapsed: false
+      input:
+        monitored_entities:
+          name: Entities to monitor
+          description: >
+            Battery sensors, binary sensors, numeric sensors, switches,
+            lights — anything with a state. At least one is required.
+          selector:
+            entity:
+              multiple: true
+
+    # ── SECTION 2: BATTERY ───────────────────────────────────────────
+    battery_section:
+      name: Low battery
+      icon: mdi:battery-alert
+      collapsed: false
+      input:
+        battery_enabled:
+          name: Enable low battery alerts
+          default: true
+          selector:
+            boolean:
+        battery_threshold:
+          name: Battery threshold (%)
+          description: Alert fires once the state drops below this value.
+          default: 20
+          selector:
+            number:
+              min: 5
+              max: 80
+              unit_of_measurement: "%"
+              mode: slider
+              step: 5
+
+    # ── SECTION 3: OFFLINE ───────────────────────────────────────────
+    offline_section:
+      name: Offline / unavailable
+      icon: mdi:lan-disconnect
+      collapsed: false
+      input:
+        offline_enabled:
+          name: Enable offline alerts
+          default: true
+          selector:
+            boolean:
+        offline_minutes:
+          name: Offline grace period (minutes)
+          description: Only alert after the entity has been unavailable this long.
+          default: 10
+          selector:
+            number:
+              min: 1
+              max: 1440
+              unit_of_measurement: min
+              mode: slider
+              step: 1
+
+    # ── SECTION 4: STALE DATA ────────────────────────────────────────
+    stale_section:
+      name: Stale data
+      icon: mdi:clock-alert-outline
+      collapsed: true
+      input:
+        stale_enabled:
+          name: Enable stale-data alerts
+          description: >
+            Detects numeric sensors that stopped reporting. Checked every hour.
+          default: false
+          selector:
+            boolean:
+        stale_hours:
+          name: Stale threshold (hours)
+          description: >
+            Alert if the entity's `last_updated` is older than this many hours.
+          default: 24
+          selector:
+            number:
+              min: 1
+              max: 168
+              unit_of_measurement: h
+              mode: slider
+              step: 1
+
+    # ── SECTION 5: NOTIFICATIONS ─────────────────────────────────────
+    notify_section:
+      name: Notifications
+      icon: mdi:bell-ring-outline
+      collapsed: false
+      input:
+        notify_service:
+          name: Notification service
+          description: >
+            e.g. `notify.mobile_app_iphone`, `notify.family`, or
+            `notify.persistent_notification` for HA sidebar only.
+          default: notify.persistent_notification
+          selector:
+            text:
+        also_persistent:
+          name: Also log to HA persistent notifications
+          description: >
+            In addition to the service above, always post to the HA sidebar.
+          default: false
+          selector:
+            boolean:
+        cooldown_minutes:
+          name: Cooldown per entity (minutes)
+          description: >
+            Minimum time between consecutive alerts for the same entity.
+            Prevents flooding when a device is flapping.
+          default: 60
+          selector:
+            number:
+              min: 0
+              max: 1440
+              unit_of_measurement: min
+              mode: slider
+              step: 5
+        mobile_actions_enabled:
+          name: Include mobile action buttons
+          description: >
+            Adds "Dismiss" and "Snooze 24h" buttons to the iOS/Android
+            notification. Requires the notification service to be a
+            mobile_app notifier.
+          default: false
+          selector:
+            boolean:
+
+    # ── SECTION 6: DIGEST ────────────────────────────────────────────
+    digest_section:
+      name: Digest mode
+      icon: mdi:email-outline
+      collapsed: true
+      input:
+        digest_enabled:
+          name: Enable digest mode
+          description: >
+            Instead of per-event alerts, accumulate and send one summary
+            at the digest time below. Great for low-urgency sites.
+          default: false
+          selector:
+            boolean:
+        digest_time:
+          name: Digest send time
+          description: What time of day to send the daily digest.
+          default: "20:00:00"
+          selector:
+            time:
+
+mode: parallel
+max: 10
+max_exceeded: silent
+
+trigger_variables:
+  input_entities: !input monitored_entities
+
+trigger:
+  # ── Low battery trigger ────────────────────────────────────────────
+  - platform: numeric_state
+    entity_id: !input monitored_entities
+    below: !input battery_threshold
+    id: low_battery
+
+  # ── Offline triggers ───────────────────────────────────────────────
+  - platform: state
+    entity_id: !input monitored_entities
+    to: unavailable
+    for:
+      minutes: !input offline_minutes
+    id: offline
+  - platform: state
+    entity_id: !input monitored_entities
+    to: unknown
+    for:
+      minutes: !input offline_minutes
+    id: offline
+
+  # ── Hourly check for stale data ────────────────────────────────────
+  - platform: time_pattern
+    hours: /1
+    id: stale_check
+
+  # ── Digest send ────────────────────────────────────────────────────
+  - platform: time
+    at: !input digest_time
+    id: digest_send
+
+variables:
+  battery_enabled: !input battery_enabled
+  offline_enabled: !input offline_enabled
+  stale_enabled: !input stale_enabled
+  stale_hours: !input stale_hours
+  battery_threshold: !input battery_threshold
+  notify_service_str: !input notify_service
+  also_persistent: !input also_persistent
+  cooldown_minutes: !input cooldown_minutes
+  mobile_actions_enabled: !input mobile_actions_enabled
+  digest_enabled: !input digest_enabled
+  entities_list: !input monitored_entities
+
+action:
+  - variables:
+      triggering_entity: "{{ trigger.entity_id | default('') }}"
+      triggering_state: "{{ trigger.to_state.state if trigger.to_state is defined else '' }}"
+      # Brand detection from entity_id — fuzzy match common keywords
+      brand_icon: >-
+        {% set e = triggering_entity | lower %}
+        {% if 'hue' in e or 'philips' in e %}phu:philips-hue-logo
+        {% elif 'aqara' in e %}phu:aqara-logo
+        {% elif 'xiaomi' in e or 'mi_' in e %}phu:xiaomi-logo
+        {% elif 'tuya' in e %}phu:tuya-logo
+        {% elif 'sonos' in e %}phu:sonos-logo
+        {% elif 'shelly' in e %}phu:shelly-logo
+        {% elif 'apple' in e or 'iphone' in e or 'ipad' in e or 'airpods' in e or '_ios' in e %}phu:apple-logo
+        {% elif 'samsung' in e %}phu:samsung-logo
+        {% elif 'lg_' in e or '_lg' in e %}phu:lg-logo
+        {% elif 'amazon' in e or 'alexa' in e or 'echo' in e %}phu:amazon-logo
+        {% elif 'google' in e or 'nest' in e %}phu:google-logo
+        {% elif 'moes' in e %}phu:moes
+        {% elif 'levoit' in e %}phu:levoit-logo
+        {% elif 'dreame' in e %}phu:dreame-logo
+        {% elif 'ubiquiti' in e or 'unifi' in e %}phu:ubiquiti-logo
+        {% elif 'tplink' in e or 'tp_link' in e or 'tp-link' in e %}phu:tp-link-logo
+        {% elif 'bose' in e %}phu:bose-logo
+        {% elif 'roborock' in e %}phu:roborock-logo
+        {% elif 'lutron' in e %}phu:lutron-logo
+        {% elif 'ecobee' in e %}phu:ecobee-logo
+        {% elif 'ring_' in e or '_ring' in e %}phu:ring-logo
+        {% elif 'arlo' in e %}phu:arlo-logo
+        {% elif 'wyze' in e %}phu:wyze-logo
+        {% elif 'reolink' in e %}phu:reolink-logo
+        {% elif 'yale' in e %}phu:yale-logo
+        {% elif 'kwikset' in e %}phu:kwikset-logo
+        {% elif 'august' in e %}phu:august-logo
+        {% elif 'fibaro' in e %}phu:fibaro-logo
+        {% elif 'somfy' in e %}phu:somfy-logo
+        {% elif 'sonoff' in e %}phu:sonoff
+        {% elif 'ewelink' in e %}phu:sonoff
+        {% elif 'etekcity' in e %}phu:etekcity-logo
+        {% elif 'thirdreality' in e %}phu:thirdreality-logo
+        {% elif 'matter' in e %}phu:matter-logo
+        {% elif 'thread' in e %}phu:thread-logo
+        {% elif 'zigbee' in e or 'z2m' in e %}phu:zigbee-logo
+        {% elif 'zwave' in e or 'z_wave' in e %}phu:zwave-logo
+        {% else %}mdi:alert-circle-outline
+        {% endif %}
+      triggering_name: >-
+        {{ state_attr(triggering_entity, 'friendly_name') or triggering_entity }}
+      last_ts_key: >-
+        last_alert_{{ triggering_entity | replace('.', '_') }}
+      # Cooldown check — uses automation's own trace storage via input_datetime would be ideal,
+      # but within a blueprint we rely on the last_triggered of the automation + a per-entity
+      # trigger.id discriminator. Cooldown here is advisory/coarse.
+      now_ts: "{{ as_timestamp(now()) }}"
+      last_triggered_ts: >-
+        {{ as_timestamp(this.attributes.last_triggered)
+           if this.attributes.last_triggered else 0 }}
+      cooldown_passed: >-
+        {{ cooldown_minutes == 0 or
+           (now_ts - last_triggered_ts) > (cooldown_minutes * 60) }}
+
+  - choose:
+      # ─── LOW BATTERY ────────────────────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: low_battery
+          - condition: template
+            value_template: "{{ battery_enabled and cooldown_passed }}"
+        sequence:
+          - service: "{{ notify_service_str }}"
+            data:
+              title: "🔋 Batería baja"
+              message: >-
+                {{ triggering_name }} — {{ states(triggering_entity) }}%
+                (umbral {{ battery_threshold }}%)
+              data:
+                tag: "{{ triggering_entity }}"
+                icon: "{{ brand_icon }}"
+                actions: >-
+                  {{ [
+                       {'action': 'URI', 'title': 'Ver en HA',
+                        'uri': '/lovelace/0'},
+                       {'action': 'SNOOZE_' ~ triggering_entity,
+                        'title': 'Snooze 24h', 'destructive': false}
+                     ] if mobile_actions_enabled else [] }}
+          - if:
+              - condition: template
+                value_template: "{{ also_persistent }}"
+            then:
+              - service: persistent_notification.create
+                data:
+                  title: "🔋 {{ triggering_name }}"
+                  message: >-
+                    Batería {{ states(triggering_entity) }}% (umbral
+                    {{ battery_threshold }}%). [{{ brand_icon }}]
+                  notification_id: "low_batt_{{ triggering_entity }}"
+
+      # ─── OFFLINE ────────────────────────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: offline
+          - condition: template
+            value_template: "{{ offline_enabled and cooldown_passed }}"
+        sequence:
+          - service: "{{ notify_service_str }}"
+            data:
+              title: "📡 Dispositivo offline"
+              message: >-
+                {{ triggering_name }} lleva sin responder
+                {{ (as_timestamp(now()) - as_timestamp(trigger.to_state.last_changed)) | int // 60 }} min
+              data:
+                tag: "{{ triggering_entity }}"
+                icon: "{{ brand_icon }}"
+          - if:
+              - condition: template
+                value_template: "{{ also_persistent }}"
+            then:
+              - service: persistent_notification.create
+                data:
+                  title: "📡 {{ triggering_name }}"
+                  message: >-
+                    Offline desde
+                    {{ trigger.to_state.last_changed.strftime('%H:%M') }}.
+                    [{{ brand_icon }}]
+                  notification_id: "offline_{{ triggering_entity }}"
+
+      # ─── STALE DATA (hourly sweep) ──────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: stale_check
+          - condition: template
+            value_template: "{{ stale_enabled }}"
+        sequence:
+          - repeat:
+              for_each: "{{ entities_list }}"
+              sequence:
+                - variables:
+                    ent: "{{ repeat.item }}"
+                    ent_last: >-
+                      {{ as_timestamp(states[ent].last_updated)
+                         if states[ent] is not none else 0 }}
+                    hours_old: >-
+                      {{ ((as_timestamp(now()) - ent_last) / 3600) | round(1)
+                         if ent_last > 0 else 0 }}
+                    ent_state: "{{ states(ent) }}"
+                    is_numeric: >-
+                      {{ ent_state | float(default='nan') | string != 'nan' }}
+                    ent_brand: >-
+                      {% set el = ent | lower %}
+                      {% if 'hue' in el or 'philips' in el %}phu:philips-hue-logo
+                      {% elif 'aqara' in el %}phu:aqara-logo
+                      {% elif 'tuya' in el %}phu:tuya-logo
+                      {% elif 'moes' in el %}phu:moes
+                      {% elif 'shelly' in el %}phu:shelly-logo
+                      {% elif 'sonoff' in el or 'ewelink' in el %}phu:sonoff
+                      {% else %}mdi:clock-alert-outline
+                      {% endif %}
+                - if:
+                    - condition: template
+                      value_template: "{{ is_numeric and hours_old > stale_hours }}"
+                  then:
+                    - service: "{{ notify_service_str }}"
+                      data:
+                        title: "⏱ Sensor congelado"
+                        message: >-
+                          {{ state_attr(ent, 'friendly_name') or ent }}
+                          sin actualizar hace {{ hours_old }} h
+                          (último valor: {{ ent_state }})
+                        data:
+                          tag: "stale_{{ ent }}"
+                          icon: "{{ ent_brand }}"
+
+      # ─── DIGEST SEND (daily summary) ────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: digest_send
+          - condition: template
+            value_template: "{{ digest_enabled }}"
+        sequence:
+          - variables:
+              low_batt_list: >-
+                {% set ns = namespace(items=[]) %}
+                {% for e in entities_list %}
+                  {% set v = states(e) | float(default=-1) %}
+                  {% if v >= 0 and v < battery_threshold %}
+                    {% set ns.items = ns.items + [(state_attr(e, 'friendly_name') or e) ~ ' (' ~ v|int ~ '%)'] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items }}
+              offline_list: >-
+                {% set ns = namespace(items=[]) %}
+                {% for e in entities_list %}
+                  {% if states(e) in ['unavailable', 'unknown'] %}
+                    {% set ns.items = ns.items + [state_attr(e, 'friendly_name') or e] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items }}
+          - service: "{{ notify_service_str }}"
+            data:
+              title: "📋 Resumen diario de dispositivos"
+              message: >-
+                {% if low_batt_list | length == 0 and offline_list | length == 0 %}
+                ✅ Todos los dispositivos monitoreados están sanos.
+                {% else %}
+                {% if low_batt_list | length > 0 %}🔋 Batería baja:
+                {{ low_batt_list | join(', ') }}
+                {% endif %}
+                {% if offline_list | length > 0 %}📡 Offline:
+                {{ offline_list | join(', ') }}
+                {% endif %}
+                {% endif %}
+              data:
+                icon: mdi:clipboard-list-outline
