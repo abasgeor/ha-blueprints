@@ -12,7 +12,7 @@ blueprint:
     - **Temporal stability** — the temperature must hold above/below the threshold for `stable_seconds` before acting (anti-flapping)
     - **Emergency mode** — if temperature exceeds `temp_critical`, forces ON immediately with a critical notification
     - **Sensor fail-safe** — if the sensor is `unavailable`/`unknown` for more than `sensor_failsafe_minutes`, turns ON as a precaution and notifies
-    - **Periodic sync** — verification every `periodic_check_minutes` corrects state if triggers are missed (e.g. after HA restart)
+    - **Periodic sync** — verification every 5 min corrects state if triggers are missed (e.g. after HA restart)
     - **State recovery** — on HA start, evaluates current state and corrects
     - **Optional notifications** — for critical events (`critical` / `sensor_failure`) via any `notify.*` service
     - **Logbook + system_log** — configurable traceability
@@ -125,7 +125,13 @@ blueprint:
               mode: box
         periodic_check_minutes:
           name: Periodic check (minutes)
-          description: How often to verify state and correct. Backup in case a trigger is missed.
+          description: >
+            Nominal cadence of the periodic backup sync (backstop in case a
+            numeric_state trigger is missed). NOTE: the backstop trigger is fixed
+            at every 5 min (`time_pattern minutes: "/5"`) because HA time_pattern
+            cannot derive an interval from a numeric input — to change the cadence,
+            edit the `periodic_check` trigger's `minutes: "/N"`. Kept for backward
+            compatibility with existing automations.
           default: 5
           selector:
             number:
@@ -226,7 +232,7 @@ trigger:
       minutes: !input sensor_failsafe_minutes
     id: sensor_failed
   - trigger: time_pattern
-    minutes: !input periodic_check_minutes
+    minutes: "/5"
     id: periodic_check
   - trigger: homeassistant
     event: start
